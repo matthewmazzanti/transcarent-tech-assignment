@@ -4,6 +4,10 @@ import (
     "testing"
     "encoding/json"
     "reflect"
+    "sync"
+    "context"
+    "log"
+    "fmt"
 )
 
 // User test data
@@ -167,28 +171,12 @@ func expPostsJson() interface{} {
 }
 
 
-var expUserPostsStr string = `{
-    "id": 1,
-    "userInfo": {
-        "name": "Leanne Graham",
-        "username": "Bret",
-        "email": "Sincere@april.biz"
-    },
-    "posts": [{
-        "id": 1,
-        "title": "title of the user’s post",
-        "body": "body of the user’s post"
-    }]
-}`
-
-func expUserPostsJson() interface{} {
-	var res interface{}
-	json.Unmarshal([]byte(expUserPostsStr), &res)
-	return res
-}
-
 func TestGetJson(t *testing.T) {
-	user, err := getJson("https://jsonplaceholder.typicode.com/users/1")
+	user, status, err := getJson("https://jsonplaceholder.typicode.com/users/1")
+
+	if status < 200 || status >= 300 {
+		t.Fatalf("Got error status: %d", status)
+	}
 
 	if err != nil {
 		t.Fatalf("Non nil error in getJson: %v", err)
@@ -199,7 +187,11 @@ func TestGetJson(t *testing.T) {
 		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", exp, user)
 	}
 
-	posts, err := getJson("https://jsonplaceholder.typicode.com/posts?userId=1")
+	posts, status, err := getJson("https://jsonplaceholder.typicode.com/posts?userId=1")
+
+	if status < 200 || status >= 300 {
+		t.Fatalf("Got error status: %d", status)
+	}
 
 	if err != nil {
 		t.Fatalf("Non nil error in getJson: %v", err)
@@ -467,7 +459,11 @@ func TestParsePosts(t *testing.T) {
 }
 
 func TestGetUser(t *testing.T) {
-	user, err := getUser(1)
+	user, status, err := getUser(1)
+	if status < 200 || status >= 300 {
+		t.Fatalf("Got error status: %d", status)
+	}
+
 	if err != nil {
 		t.Fatalf("Unexpected getting user: %v", err)
 	}
@@ -478,7 +474,11 @@ func TestGetUser(t *testing.T) {
 }
 
 func TestGetPosts(t *testing.T) {
-	posts, err := getPosts(1)
+	posts, status, err := getPosts(1)
+	if status < 200 || status >= 300 {
+		t.Fatalf("Got error status: %d", status)
+	}
+
 	if err != nil {
 		t.Fatalf("Unexpected getting posts: %v", err)
 	}
@@ -505,12 +505,149 @@ func TestMarshal(t *testing.T) {
 		},
 	}
 
+	var exp interface{}
+	json.Unmarshal([]byte(`{
+    "id": 1,
+    "userInfo": {
+        "name": "Leanne Graham",
+        "username": "Bret",
+        "email": "Sincere@april.biz"
+    },
+    "posts": [{
+        "id": 1,
+        "title": "title of the user’s post",
+        "body": "body of the user’s post"
+    }]
+}`), &exp)
+
 	userPostsJson, _ := json.Marshal(userPosts)
 	var userPostsData interface{}
 	json.Unmarshal(userPostsJson, &userPostsData)
 
-	exp := expUserPostsJson()
 	if !reflect.DeepEqual(exp, userPostsData) {
 		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", exp, userPostsData)
 	}
+}
+
+func TestServer(t *testing.T) {
+	serverExit := &sync.WaitGroup{}
+	srv := runServer(serverExit)
+
+	for id := 1; id <= 10; id++ {
+		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
+		res, status, err := getJson(url)
+		if errorStatus(status) {
+			t.Fatalf("Unexpected http error status: %d", status)
+		}
+
+		if err != nil {
+			t.Fatalf("Failed to get user posts: %v", err)
+		}
+
+		userPosts, status, err := getUserPosts(id)
+		if errorStatus(status) || err != nil {
+			log.Fatalf("Unable to get reference UserPosts")
+		}
+
+		userPostsJson, _ := json.Marshal(userPosts)
+		var exp interface{}
+		json.Unmarshal(userPostsJson, &exp)
+
+		if !reflect.DeepEqual(exp, res) {
+			t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", exp, res)
+		}
+	}
+
+	for id := 11; id <= 20; id++ {
+		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
+		_, status, err := getJson(url)
+		if status != 404 {
+			t.Fatalf("Unexpected http error status: %d", status)
+		}
+
+		if err != nil {
+			t.Fatalf("Unexpected error getting user posts: %v", err)
+		}
+	}
+
+	_, status, err := getJson("http://localhost:8080/v1/user-posts/-10")
+	if status != 404 {
+		t.Fatalf("Unexpected http error status: %d", status)
+	}
+
+	if err != nil {
+		t.Fatalf("Unexpected error getting user posts: %v", err)
+	}
+
+	_, status, err = getJson("http://localhost:8080/v1/user-posts/asdfqwer")
+	if status != 404 {
+		t.Fatalf("Unexpected http error status: %d", status)
+	}
+
+	if err != nil {
+		t.Fatalf("Unexpected error getting user posts: %v", err)
+	}
+
+
+	err = srv.Shutdown(context.TODO())
+	if err != nil {
+		log.Fatalf("Server failed to shut down")
+	}
+
+	serverExit.Wait()
+}
+
+func TestServerRemote404(t *testing.T) {
+	serverExit := &sync.WaitGroup{}
+	srv := runServer(serverExit)
+
+	for id := 11; id <= 20; id++ {
+		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
+		_, status, err := getJson(url)
+		if status != 404 {
+			t.Fatalf("Unexpected http error status: %d", status)
+		}
+
+		if err != nil {
+			t.Fatalf("Unexpected error getting user posts: %v", err)
+		}
+	}
+
+	err := srv.Shutdown(context.TODO())
+	if err != nil {
+		log.Fatalf("Server failed to shut down")
+	}
+
+	serverExit.Wait()
+}
+
+func TestServerLocal404(t *testing.T) {
+	serverExit := &sync.WaitGroup{}
+	srv := runServer(serverExit)
+
+	_, status, err := getJson("http://localhost:8080/v1/user-posts/-10")
+	if status != 404 {
+		t.Fatalf("Unexpected http error status: %d", status)
+	}
+
+	if err != nil {
+		t.Fatalf("Unexpected error getting user posts: %v", err)
+	}
+
+	_, status, err = getJson("http://localhost:8080/v1/user-posts/asdfqwer")
+	if status != 404 {
+		t.Fatalf("Unexpected http error status: %d", status)
+	}
+
+	if err != nil {
+		t.Fatalf("Unexpected error getting user posts: %v", err)
+	}
+
+
+	err = srv.Shutdown(context.TODO())
+	if err != nil {
+		log.Fatalf("Server failed to shut down")
+	}
+
+	serverExit.Wait()
 }
