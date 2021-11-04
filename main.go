@@ -8,6 +8,7 @@ import (
 	"strings"
 	"strconv"
 	"sync"
+	"context"
 )
 
 // Define the data structure. Since the expected result has a very rigid
@@ -37,9 +38,16 @@ var baseUrl = "https://jsonplaceholder.typicode.com"
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+	userPosts, status, err := getUserPosts(1)
+	fmt.Println(userPosts)
+	fmt.Println(status)
+	fmt.Println(err)
+
+	/*
 	serverExit := &sync.WaitGroup{}
 	runServer(serverExit)
 	serverExit.Wait()
+	*/
 }
 
 func errorStatus(status int) bool {
@@ -112,43 +120,88 @@ func runServer(wg *sync.WaitGroup) *http.Server {
 // Request both the user and their posts, and stitch together into a UserPosts
 // struct
 func getUserPosts(id int) (*UserPosts, int, error) {
-	user, status, err := getUser(id)
-	if errorStatus(status) {
-		return nil, status, nil
-	}
-	if err != nil {
-		return nil, status, err
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resChan := make(chan interface{})
+	var user *User = nil
+	var posts []Post = nil
+
+	// Run both gets in parallel
+	go func() {
+		resChan <- getUser(ctx, id)
+	}()
+
+	go func() {
+		resChan <- getPosts(ctx, id)
+	}()
+
+	// Iterate until we have both the user and the post data. The requests
+	// are defined such that a 200 status and no errors will always have
+	// non-null values for these
+	for user == nil || posts == nil {
+		resIface := <-resChan
+		switch res := resIface.(type) {
+		case UserRes:
+			// If we error out, cancel the in-flight request
+			if errorStatus(res.status) {
+				cancel()
+				return nil, res.status, nil
+			}
+			if res.err != nil {
+				cancel()
+				return nil, res.status, res.err
+			}
+			user = res.user
+
+		case PostsRes:
+			// If we error out, cancel the in-flight request
+			if errorStatus(res.status) {
+				cancel()
+				return nil, res.status, nil
+			}
+			if res.err != nil {
+				cancel()
+				return nil, res.status, res.err
+			}
+			posts = res.posts
+
+		// Shouldnt happen, since this covers all cases of return types
+		default:
+			log.Fatalf("Unexpected type returned from resChan")
+		}
 	}
 
-	posts, status, err := getPosts(id)
-	if errorStatus(status) {
-		return nil, status, nil
-	}
-	if err != nil {
-		return nil, status, err
-	}
+	close(resChan)
 
 	return &UserPosts{
 		Id: id,
-		UserInfo: user,
+		UserInfo: *user,
 		Posts: posts,
 	}, 200, nil
 }
 
+// Data structure to contain the state of request to user endpoint
+type UserRes struct {
+	user *User
+	status int
+	err error
+}
+
 // Make a get request to the user's endpoint, and validate the response
-func getUser(id int) (User, int, error) {
+func getUser(ctx context.Context, id int) UserRes {
 	url := fmt.Sprintf("%s/users/%d", baseUrl, id)
 
-	res, status, err := getJson(url)
+	res, status, err := getJson(ctx, url)
 	if errorStatus(status) {
-		return User{}, status, nil
+		return UserRes{ status: status }
 	}
 	if err != nil {
-		return User{}, status, err
+		return UserRes{ status: status, err: err }
 	}
 
 	user, err := parseUser(res)
-	return user, status, err
+	return UserRes{ user: &user, status: status, err: err }
 }
 
 // Unpack JSON data into the "User" data structure. If fields are missing or
@@ -175,20 +228,27 @@ func parseUser(res interface{}) (User, error) {
 	}, nil
 }
 
+// Data structure to contain the state of request to posts endpoint
+type PostsRes struct {
+	posts []Post
+	status int
+	err error
+}
+
 // Make a get request to the posts endpoint with a userId filter, and validate
 // the response
-func getPosts(id int) ([]Post, int, error) {
+func getPosts(ctx context.Context, id int) PostsRes {
 	url := fmt.Sprintf("%s/posts?userId=%d", baseUrl, id)
-	res, status, err := getJson(url)
+	res, status, err := getJson(ctx, url)
 	if errorStatus(status) {
-		return nil, status, nil
+		return PostsRes{ posts: nil, status: status, err: nil }
 	}
 	if err != nil {
-		return nil, status, err
+		return PostsRes{ posts: nil, status: status, err: err }
 	}
 
 	posts, err := parsePosts(res)
-	return posts, status, err
+	return PostsRes{ posts: posts, status: status, err: err }
 }
 
 // Unpack multiple posts in a list
@@ -292,10 +352,14 @@ func indexStr(data map[string]interface{}, key string) (string, error) {
 // An interface{} of the parsed json, if applicable
 // An HTTP status code
 // An error. This may be an error in the request or in the parsing of the json
-func getJson(url string) (interface{}, int, error) {
-	httpRes, err := http.Get(url)
+func getJson(ctx context.Context, url string) (interface{}, int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Println(err)
+		return nil, 0, err
+	}
+
+	httpRes, err := (&http.Client{}).Do(req)
+	if err != nil {
 		return nil, 0, err
 	}
 	defer httpRes.Body.Close()
@@ -307,7 +371,6 @@ func getJson(url string) (interface{}, int, error) {
 	var jsonRes interface{} = nil
 	err = json.NewDecoder(httpRes.Body).Decode(&jsonRes)
 	if err != nil {
-		log.Println(err)
 		return nil, httpRes.StatusCode, err
 	}
 

@@ -35,7 +35,7 @@ var expUserStr = `{
   }
 }`
 
-var expUser = User{
+var expUser = &User{
 	Name: "Leanne Graham",
 	Username: "Bret",
 	Email: "Sincere@april.biz",
@@ -172,7 +172,7 @@ func expPostsJson() interface{} {
 
 
 func TestGetJson(t *testing.T) {
-	user, status, err := getJson("https://jsonplaceholder.typicode.com/users/1")
+	user, status, err := getJson(context.TODO(), "https://jsonplaceholder.typicode.com/users/1")
 
 	if status < 200 || status >= 300 {
 		t.Fatalf("Got error status: %d", status)
@@ -187,7 +187,7 @@ func TestGetJson(t *testing.T) {
 		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", exp, user)
 	}
 
-	posts, status, err := getJson("https://jsonplaceholder.typicode.com/posts?userId=1")
+	posts, status, err := getJson(context.TODO(), "https://jsonplaceholder.typicode.com/posts?userId=1")
 
 	if status < 200 || status >= 300 {
 		t.Fatalf("Got error status: %d", status)
@@ -459,32 +459,32 @@ func TestParsePosts(t *testing.T) {
 }
 
 func TestGetUser(t *testing.T) {
-	user, status, err := getUser(1)
-	if status < 200 || status >= 300 {
-		t.Fatalf("Got error status: %d", status)
+	res := getUser(context.TODO(), 1)
+	if errorStatus(res.status) {
+		t.Fatalf("Got error status: %d", res.status)
 	}
 
-	if err != nil {
-		t.Fatalf("Unexpected getting user: %v", err)
+	if res.err != nil {
+		t.Fatalf("Unexpected getting user: %v", res.err)
 	}
 
-	if !reflect.DeepEqual(expUser, user) {
-		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", expUser, user)
+	if !reflect.DeepEqual(expUser, res.user) {
+		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", expUser, res.user)
 	}
 }
 
 func TestGetPosts(t *testing.T) {
-	posts, status, err := getPosts(1)
-	if status < 200 || status >= 300 {
-		t.Fatalf("Got error status: %d", status)
+	res := getPosts(context.TODO(), 1)
+	if errorStatus(res.status) {
+		t.Fatalf("Got error status: %d", res.status)
 	}
 
-	if err != nil {
-		t.Fatalf("Unexpected getting posts: %v", err)
+	if res.err != nil {
+		t.Fatalf("Unexpected getting posts: %v", res.err)
 	}
 
-	if !reflect.DeepEqual(expPosts, posts) {
-		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", expPosts, posts)
+	if !reflect.DeepEqual(expPosts, res.posts) {
+		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", expPosts, res.posts)
 	}
 }
 
@@ -535,7 +535,7 @@ func TestServer(t *testing.T) {
 
 	for id := 1; id <= 10; id++ {
 		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
-		res, status, err := getJson(url)
+		res, status, err := getJson(context.TODO(), url)
 		if errorStatus(status) {
 			t.Fatalf("Unexpected http error status: %d", status)
 		}
@@ -560,7 +560,7 @@ func TestServer(t *testing.T) {
 
 	for id := 11; id <= 20; id++ {
 		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
-		_, status, err := getJson(url)
+		_, status, err := getJson(context.TODO(), url)
 		if status != 404 {
 			t.Fatalf("Unexpected http error status: %d", status)
 		}
@@ -570,7 +570,7 @@ func TestServer(t *testing.T) {
 		}
 	}
 
-	_, status, err := getJson("http://localhost:8080/v1/user-posts/-10")
+	_, status, err := getJson(context.TODO(), "http://localhost:8080/v1/user-posts/-10")
 	if status != 404 {
 		t.Fatalf("Unexpected http error status: %d", status)
 	}
@@ -579,7 +579,7 @@ func TestServer(t *testing.T) {
 		t.Fatalf("Unexpected error getting user posts: %v", err)
 	}
 
-	_, status, err = getJson("http://localhost:8080/v1/user-posts/asdfqwer")
+	_, status, err = getJson(context.TODO(), "http://localhost:8080/v1/user-posts/asdfqwer")
 	if status != 404 {
 		t.Fatalf("Unexpected http error status: %d", status)
 	}
@@ -603,7 +603,7 @@ func TestServerRemote404(t *testing.T) {
 
 	for id := 11; id <= 20; id++ {
 		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
-		_, status, err := getJson(url)
+		_, status, err := getJson(context.TODO(), url)
 		if status != 404 {
 			t.Fatalf("Unexpected http error status: %d", status)
 		}
@@ -625,7 +625,7 @@ func TestServerLocal404(t *testing.T) {
 	serverExit := &sync.WaitGroup{}
 	srv := runServer(serverExit)
 
-	_, status, err := getJson("http://localhost:8080/v1/user-posts/-10")
+	_, status, err := getJson(context.TODO(), "http://localhost:8080/v1/user-posts/-10")
 	if status != 404 {
 		t.Fatalf("Unexpected http error status: %d", status)
 	}
@@ -634,7 +634,7 @@ func TestServerLocal404(t *testing.T) {
 		t.Fatalf("Unexpected error getting user posts: %v", err)
 	}
 
-	_, status, err = getJson("http://localhost:8080/v1/user-posts/asdfqwer")
+	_, status, err = getJson(context.TODO(), "http://localhost:8080/v1/user-posts/asdfqwer")
 	if status != 404 {
 		t.Fatalf("Unexpected http error status: %d", status)
 	}
