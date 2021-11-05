@@ -172,9 +172,12 @@ func expPostsJson() interface{} {
 
 
 func TestGetJson(t *testing.T) {
-	user, status, err := getJson(context.TODO(), "https://jsonplaceholder.typicode.com/users/1")
+	user, status, err := getJson(
+		context.TODO(),
+		"https://jsonplaceholder.typicode.com/users/1",
+	)
 
-	if status < 200 || status >= 300 {
+	if errorStatus(status) {
 		t.Fatalf("Got error status: %d", status)
 	}
 
@@ -187,9 +190,12 @@ func TestGetJson(t *testing.T) {
 		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", exp, user)
 	}
 
-	posts, status, err := getJson(context.TODO(), "https://jsonplaceholder.typicode.com/posts?userId=1")
+	posts, status, err := getJson(
+		context.TODO(),
+		"https://jsonplaceholder.typicode.com/posts?userId=1",
+	)
 
-	if status < 200 || status >= 300 {
+	if errorStatus(status) {
 		t.Fatalf("Got error status: %d", status)
 	}
 
