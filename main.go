@@ -144,25 +144,25 @@ func getUserPosts(id int) (*UserPosts, int, error) {
 		switch res := resIface.(type) {
 		case UserRes:
 			// If we error out, cancel the in-flight request
-			if errorStatus(res.status) {
-				cancel()
-				return nil, res.status, nil
-			}
 			if res.err != nil {
 				cancel()
 				return nil, res.status, res.err
+			}
+			if errorStatus(res.status) {
+				cancel()
+				return nil, res.status, nil
 			}
 			user = res.user
 
 		case PostsRes:
 			// If we error out, cancel the in-flight request
-			if errorStatus(res.status) {
-				cancel()
-				return nil, res.status, nil
-			}
 			if res.err != nil {
 				cancel()
 				return nil, res.status, res.err
+			}
+			if errorStatus(res.status) {
+				cancel()
+				return nil, res.status, nil
 			}
 			posts = res.posts
 
@@ -193,11 +193,11 @@ func getUser(ctx context.Context, id int) UserRes {
 	url := fmt.Sprintf("%s/users/%d", baseUrl, id)
 
 	res, status, err := getJson(ctx, url)
-	if errorStatus(status) {
-		return UserRes{ status: status }
-	}
 	if err != nil {
 		return UserRes{ status: status, err: err }
+	}
+	if errorStatus(status) {
+		return UserRes{ status: status }
 	}
 
 	user, err := parseUser(res)
@@ -240,11 +240,11 @@ type PostsRes struct {
 func getPosts(ctx context.Context, id int) PostsRes {
 	url := fmt.Sprintf("%s/posts?userId=%d", baseUrl, id)
 	res, status, err := getJson(ctx, url)
-	if errorStatus(status) {
-		return PostsRes{ posts: nil, status: status, err: nil }
-	}
 	if err != nil {
 		return PostsRes{ posts: nil, status: status, err: err }
+	}
+	if errorStatus(status) {
+		return PostsRes{ posts: nil, status: status, err: nil }
 	}
 
 	posts, err := parsePosts(res)

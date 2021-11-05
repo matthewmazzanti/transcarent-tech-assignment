@@ -177,12 +177,12 @@ func TestGetJson(t *testing.T) {
 		"https://jsonplaceholder.typicode.com/users/1",
 	)
 
-	if errorStatus(status) {
-		t.Fatalf("Got error status: %d", status)
-	}
-
 	if err != nil {
 		t.Fatalf("Non nil error in getJson: %v", err)
+	}
+
+	if errorStatus(status) {
+		t.Fatalf("Got error status: %d", status)
 	}
 
 	exp := expUserJson()
@@ -195,12 +195,12 @@ func TestGetJson(t *testing.T) {
 		"https://jsonplaceholder.typicode.com/posts?userId=1",
 	)
 
-	if errorStatus(status) {
-		t.Fatalf("Got error status: %d", status)
-	}
-
 	if err != nil {
 		t.Fatalf("Non nil error in getJson: %v", err)
+	}
+
+	if errorStatus(status) {
+		t.Fatalf("Got error status: %d", status)
 	}
 
 	exp = expPostsJson()
@@ -466,12 +466,13 @@ func TestParsePosts(t *testing.T) {
 
 func TestGetUser(t *testing.T) {
 	res := getUser(context.TODO(), 1)
-	if errorStatus(res.status) {
-		t.Fatalf("Got error status: %d", res.status)
-	}
 
 	if res.err != nil {
 		t.Fatalf("Unexpected getting user: %v", res.err)
+	}
+
+	if errorStatus(res.status) {
+		t.Fatalf("Got error status: %d", res.status)
 	}
 
 	if !reflect.DeepEqual(expUser, res.user) {
@@ -481,13 +482,15 @@ func TestGetUser(t *testing.T) {
 
 func TestGetPosts(t *testing.T) {
 	res := getPosts(context.TODO(), 1)
-	if errorStatus(res.status) {
-		t.Fatalf("Got error status: %d", res.status)
-	}
 
 	if res.err != nil {
 		t.Fatalf("Unexpected getting posts: %v", res.err)
 	}
+
+	if errorStatus(res.status) {
+		t.Fatalf("Got error status: %d", res.status)
+	}
+
 
 	if !reflect.DeepEqual(expPosts, res.posts) {
 		t.Fatalf("\nExpected:\n%v\nGot:\n%v\n", expPosts, res.posts)
@@ -542,16 +545,17 @@ func TestServer(t *testing.T) {
 	for id := 1; id <= 10; id++ {
 		url := fmt.Sprintf("http://localhost:8080/v1/user-posts/%d", id)
 		res, status, err := getJson(context.TODO(), url)
-		if errorStatus(status) {
-			t.Fatalf("Unexpected http error status: %d", status)
-		}
 
 		if err != nil {
 			t.Fatalf("Failed to get user posts: %v", err)
 		}
 
+		if errorStatus(status) {
+			t.Fatalf("Unexpected http error status: %d", status)
+		}
+
 		userPosts, status, err := getUserPosts(id)
-		if errorStatus(status) || err != nil {
+		if err != nil || errorStatus(status) {
 			log.Fatalf("Unable to get reference UserPosts")
 		}
 
